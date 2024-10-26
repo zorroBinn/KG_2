@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstdlib>
 #include <Windows.h>
+#include <chrono>
+#include <thread>
 
 using namespace std;
 
@@ -187,6 +189,7 @@ void fillPolygonZBuffer(const MyPolygon& poly) {
                 drawPixel(x, y, poly.color);
                 glutSwapBuffers();
             }
+            this_thread::sleep_for(chrono::nanoseconds(1));
         }
     }
 }
