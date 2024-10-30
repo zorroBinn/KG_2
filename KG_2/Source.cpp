@@ -14,6 +14,7 @@ const int WIDTH = 512;
 const int HEIGHT = 512;
 
 float WHITE[3] = { 1, 1, 1 };
+float BLACK[3] = { 0, 0, 0 };
 
 //Структура для представления точки в 3D пространстве
 struct Point3D {
@@ -30,6 +31,7 @@ struct MyPolygon {
 vector<MyPolygon> polygons;
 float zBuffer[WIDTH][HEIGHT];
 float frameBuffer[WIDTH][HEIGHT][3];
+float depthMapBuffer[WIDTH][HEIGHT][3];
 
 //Функция выбора набора многоугольников: фиксированные или случайные
 void selectPolygons() {
@@ -116,6 +118,9 @@ void initializeBuffers() {
             frameBuffer[x][y][0] = WHITE[0];
             frameBuffer[x][y][1] = WHITE[1];
             frameBuffer[x][y][2] = WHITE[2];
+            depthMapBuffer[x][y][0] = BLACK[0];
+            depthMapBuffer[x][y][1] = BLACK[1];
+            depthMapBuffer[x][y][2] = BLACK[2];
         }
     }
 }
@@ -127,7 +132,7 @@ void drawPixel(int x, int y, const float color[3]) {
     glEnd();
 }
 
-//Функция для вычисления коэффициентов уравнения плоскости
+//Функция для вычисления коэффициентов уравнения плоскости по трём первым вершинам многоугольника
 void calculatePlaneCoefficients(const MyPolygon& poly, float& A, float& B, float& C, float& D) {
     Point3D v0 = poly.vertices[0];
     Point3D v1 = poly.vertices[1];
@@ -143,13 +148,12 @@ void calculatePlaneCoefficients(const MyPolygon& poly, float& A, float& B, float
 bool isPointInPolygon(int x, int y, const MyPolygon& poly) {
     int intersections = 0;
     int numVertices = poly.vertices.size();
-
+    // Метод основан на определении количества пересечений горизонтальной линии, проходящей через точку, с ребрами многоугольника.
     for (int i = 0; i < numVertices; i++) {
         Point3D v1 = poly.vertices[i];
         Point3D v2 = poly.vertices[(i + 1) % numVertices];
-
-        if (((v1.y > y) != (v2.y > y)) &&
-            (x < (v2.x - v1.x) * (y - v1.y) / (v2.y - v1.y) + v1.x)) {
+        //Проверяем, пересекает ли горизонтальная линия через точку (x, y) это ребро
+        if (((v1.y > y) != (v2.y > y)) && (x < (v2.x - v1.x) * (y - v1.y) / (v2.y - v1.y) + v1.x)) {
             intersections++;
         }
     }
@@ -161,7 +165,7 @@ bool isPointInPolygon(int x, int y, const MyPolygon& poly) {
 void fillPolygonZBuffer(const MyPolygon& poly) {
     float A, B, C, D;
     calculatePlaneCoefficients(poly, A, B, C, D);
-
+    //Находим границы минимального и максимального значения x и y для ограничения цикла
     int minX = WIDTH, maxX = 0, minY = HEIGHT, maxY = 0;
     for (const auto& vertex : poly.vertices) {
         int x = static_cast<int>(vertex.x);
@@ -171,7 +175,7 @@ void fillPolygonZBuffer(const MyPolygon& poly) {
         minY = min(minY, y);
         maxY = max(maxY, y);
     }
-
+    //Ограничиваем значения координат, чтобы не выходить за пределы экрана
     minX = max(minX, 0);
     maxX = min(maxX, WIDTH - 1);
     minY = max(minY, 0);
@@ -186,12 +190,32 @@ void fillPolygonZBuffer(const MyPolygon& poly) {
             if (z > zBuffer[x][y]) {
                 zBuffer[x][y] = z;
                 copy(poly.color, poly.color + 3, frameBuffer[x][y]);
+
+                float depthShade = (z / 50.0f);
+                depthShade = min(1.0f, max(0.0f, depthShade));
+                depthMapBuffer[x][y][0] = depthShade;
+                depthMapBuffer[x][y][1] = depthShade;
+                depthMapBuffer[x][y][2] = depthShade;
+
                 drawPixel(x, y, poly.color);
                 glutSwapBuffers();
             }
             this_thread::sleep_for(chrono::nanoseconds(1));
         }
     }
+}
+
+void displayDepthMap() {
+    glClear(GL_COLOR_BUFFER_BIT);
+    glLoadIdentity();
+    glOrtho(0, WIDTH, 0, HEIGHT, -1, 1);
+
+    for (int x = 0; x < WIDTH; x++) {
+        for (int y = 0; y < HEIGHT; y++) {
+            drawPixel(x, y, depthMapBuffer[x][y]);
+        }
+    }
+    glutSwapBuffers();
 }
 
 void display() {
@@ -214,6 +238,9 @@ void handleKeypress(unsigned char key, int x, int y) {
             fillPolygonZBuffer(poly);
         }
         display();
+    }
+    else if (key == 'm' || key == 'M') {
+        displayDepthMap();
     }
 }
 
